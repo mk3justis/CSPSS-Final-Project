@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 x = np.arange(0, 4*np.pi, 0.1)
-y = np.sin(x)
+y = np.sin(4*x)
 
 plt.plot(x,y,color='red')
 plt.show()
