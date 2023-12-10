@@ -19,7 +19,7 @@ class App:
         self.show_plots_button.pack()
 
     def load_file(self):
-        file_path = filedialog.askopenfilename(filetypes=[("Audio Files", "*.wav;*.mp3;*.m4a")])
+        file_path = filedialog.askopenfilename(filetypes=[("Audio Files", "*.wav;*.mp3")])
         if file_path:
             self.model_instance.load_data(file_path)
             print("File Loaded Successfully!")
