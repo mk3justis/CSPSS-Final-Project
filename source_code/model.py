@@ -1,59 +1,58 @@
 import pandas as pd
-from scipy.io import wavfile
+from scipy.signal import welch
 from pydub import AudioSegment
 import numpy as np
 import matplotlib.pyplot as plt
 
 
-
 class Model:
-    def __init__(self):
+    def __init__(self) :
+        self.sound = None
         self.data = None
+        self.sample_rate = None
 
-    def load_data(self, path_file):
-        if path_file.endswith('.WAV'):
-            sample_rate, sample_data = wavfile.read(path_file)
-
-        else:
-            # here we try to read the file if it is .wav
-            try:
-                sample_rate, sample_data = wavfile.read(path_file)
-            except ValueError:
-                audio = AudioSegment.from_file(path_file)
-                audio.export("converted.wav", format="wav")
-                sample_rate, sample_data = wavfile.read("converted.wav")
-
-        self.data = pd.DataFrame({'Channel 1': sample_data})
-
-        if self.data is not None:
-            print(self.data)
-            print("this is channel 1")
-            print(self.data['Channel 1'])
-            print(self.data.info())
-            print(self.data.columns)
-            print(sample_data)
-            print(self.data.head())
-            print(self.data.shape)
-
-    def clean_data(self):
+    def load_data(self, file_path) :
+        valid_file = 0
+        while not valid_file :
+            # convert .mp3 to .wav
+            if file_path.endswith('.mp3') :
+                valid_file = 1
+                self.sound = AudioSegment.from_mp3(file_path)
+                self.sound.export('converted.wav', format="wav")
+                self.sound = AudioSegment.from_wav('converted.wav')
+            elif file_path.endswith('.wav') :
+                valid_file = 1
+                self.sound = AudioSegment.from_wav(file_path)
+            else :
+                print("Not a valid file format.")
+        self.sample_rate = self.sound.frame_rate
+        # handle mono/stereo
+        channels = self.sound.channels
+        if channels == 1 :
+            raw_data = self.sound.get_array_of_samples()
+            self.data = np.array(raw_data)
+        else :
+            # split stereo channels to two mono channels and use one
+            stereo_channels = self.sound.split_to_mono()
+            mono_sound = stereo_channels[0]
+            raw_data = mono_sound.get_array_of_samples()
+            self.data = np.array(raw_data)
+        
+    def clean_data(self, sound):
         # Implement self cleaning tool
-        self.data = self.data.dropna()
+        sound = sound._spawn(b'')
 
-        if 'MetadataColumn' in self.data.columns:
-            self.data = self.data.drop(columns=['MetadataColumn'])
+
+    def show_statistics(self):
+        # Print summary statistics
+        return f'Summary Statistics:\nChannels: {self.sound.channels}\nBit Depth: {self.sound.sample_width * 8}\nLength (ms): {len(self.sound)}\ndominant_frequency is {round(self.calculate_rt60())} Hz'
 
     def analyze_data(self):
-        # Generate summary statistics
-        summary_stats = self.data.describe()
-
-        # Print summary statistics
-        print("Summary Statistics:")
-        print(summary_stats)
-
         # Create self visualizations
         self.plot_histogram()
         self.plot_scatter()
-        self.plot_sine_wave()
+        # self.plot_sine_wave()
+        self.visualize_waveform()
 
         # Identify patterns or trends in RT60 values over three frequency ranges
         self.identify_rt60_trends()
@@ -66,14 +65,18 @@ class Model:
 
     def plot_histogram(self):
         plt.subplot(2, 2, 1)  # 2x2 grid, position 1
-        self.data['Channel 1'].plot(kind='hist', title='Histogram of Channel 1')
+        plt.hist(self.data)
+        plt.xlabel('Bins')
+        plt.ylabel('Amplitude')
+        plt.title('Histogram of File Data')
 
     def plot_scatter(self):
         plt.subplot(2, 2, 2)  # 2x2 grid, position 2
-        plt.scatter(self.data.index, self.data['Channel 1'])
-        plt.title('Scatter Plot of Channel 1')
+        x = np.arange(len(self.data))
+        plt.scatter(x, self.data)
+        plt.title('Scatter Plot of File Data')
         plt.xlabel('Index')
-        plt.ylabel('Channel 1')
+        plt.ylabel('Amplitude')
 
     def plot_sine_wave(self):
         plt.subplot(2, 2, 3)  # 2x2 grid, position 3
@@ -81,61 +84,26 @@ class Model:
         y_sine = np.sin(x_sine)
         plt.plot(x_sine, y_sine, label='Sine Wave')
         plt.title('Plot of a Sine Wave')
-        plt.xlabel('X-axis')
+        plt.xlabel('X-Axis')
         plt.ylabel('Y-axis')
         plt.legend()
 
-    def identify_rt60_trends(self):
-        pass
-
     def visualize_waveform(self):
-        plt.plot(self.data.index, self.data['Channel 1'])
+        x = np.arange(len(self.data))
+        plt.plot(x, self.data)
         plt.title('Waveform')
         plt.xlabel('Time')
         plt.ylabel('Amplitude')
         plt.show()
 
-
-        # all the commented below was me trying to find the
-        # RT60 but no luck
-
-"""
     def calculate_rt60(self):
+        frequencies, power = welch(self.data, self.sample_rate, nperseg=4096)
+        dominant_frequency = frequencies[np.argmax(power)]
+        return dominant_frequency
 
-        data = self.data['Channel 1'].to_numpy()
-        time = self.data.index.to_numpy()
 
-        # Step 1: Find Maximum value of dB's in array
-        max_db = np.max(data)
-
-        # Step 2: Slice self and time arrays to location of maximum value
-        max_index = np.argmax(data)
-        data_slice = data[max_index:]
-        time_slice = time[max_index:]
-
-        # Step 3: Find value which is Max - 5dB
-        threshold_5db = max_db - 5
-        index_5db = np.argmax(data_slice <= threshold_5db)
-        value_5db = data_slice[index_5db]
-        time_5db = time_slice[index_5db]
-
-        # Step 4: Find a value which is equal to max - 25dB
-        threshold_25db = max_db - 25
-        index_25db = np.argmax(data_slice <= threshold_25db)
-        value_25db = data_slice[index_25db]
-        time_25db = time_slice[index_25db]
-
-        # Step 5: Calculate RT20 as time it takes amplitude to drop from max (less 5dB) to max (less 25dB)
-        rt20 = time_25db - time_5db
-
-        # Step 6: Multiply times by 3 to give RT60 reverb time
-        rt60 = rt20 * 3
-
-        return rt60
-
-    def identify_rt60_trends(self):
-        # Assume RT60 values are in a column named 'RT60'
-        rt60_values = self.self['RT60']
+    def identify_rt60_trends(self, rt60_values):
+        # Maybe store rt60 values into some iterable and pass them through here
 
         # Boxplot of RT60 values
         plt.subplot(2, 2, 4)  # 2x2 grid, position 4
@@ -151,13 +119,14 @@ class Model:
         rt60_values = self.self[rt60_freq_ranges]
         rt60_values.plot(kind='bar', stacked=True, title='RT60 Values Over Three Frequency Ranges')
 
-    def analyze_data(self):
-        # Implement self analysis methods
-        summary_stats = self.self.describe()
+    # def analyze_data(self):
+    #     # Implement self analysis methods
+    #     summary_stats = self.self.describe()
 
-        # Print summary statistics
-        print("Summary Statistics:")
-        print(summary_stats)
+    #     # Print summary statistics
+    #     print("Summary Statistics:")
+    #     print(summary_stats)
+
 
         # Create self visualizations (you can customize based on your requirements)
         # Example: Histogram
@@ -169,7 +138,7 @@ class Model:
 
 
         # Identify patterns or trends in the self
-        # (This part depends on your specific analysis requirements)"""
+        # (This part depends on your specific analysis requirements)
 
 
 
