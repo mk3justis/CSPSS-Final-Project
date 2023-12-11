@@ -1,175 +1,153 @@
 import pandas as pd
-from scipy.io import wavfile
+from scipy.signal import welch
 from pydub import AudioSegment
 import numpy as np
 import matplotlib.pyplot as plt
 
-
+global spectrum, freeqs, t, im
 
 class Model:
-    def __init__(self):
+    def __init__(self) :
+        self.sound = None
         self.data = None
+        self.db_data = None
+        self.sample_rate = None
 
-    def load_data(self, path_file):
-        if path_file.endswith('.WAV'):
-            sample_rate, sample_data = wavfile.read(path_file)
+    def load_data(self, file_path) :
+        valid_file = 0
+        while not valid_file :
+            # convert .mp3 to .wav
+            if file_path.endswith('.mp3') :
+                valid_file = 1
+                self.sound = AudioSegment.from_mp3(file_path)
+                self.sound.export('converted.wav', format="wav")
+                self.sound = AudioSegment.from_wav('converted.wav')
+            elif file_path.endswith('.wav') :
+                valid_file = 1
+                self.sound = AudioSegment.from_wav(file_path)
+            else :
+                print("Not a valid file format.")
+        self.sample_rate = self.sound.frame_rate
+        # handle mono/stereo
+        channels = self.sound.channels
+        if channels == 1 :
+            raw_data = self.sound.get_array_of_samples()
+            self.data = np.array(raw_data)
+        else :
+            # split stereo channels to two mono channels and use one
+            stereo_channels = self.sound.split_to_mono()
+            mono_sound = stereo_channels[0]
+            raw_data = mono_sound.get_array_of_samples()
+            self.data = np.array(raw_data)
 
-        else:
-            # here we try to read the file if it is .wav
-            try:
-                sample_rate, sample_data = wavfile.read(path_file)
-            except ValueError:
-                audio = AudioSegment.from_file(path_file)
-                audio.export("converted.wav", format="wav")
-                sample_rate, sample_data = wavfile.read("converted.wav")
-
-        self.data = pd.DataFrame({'Channel 1': sample_data})
-
-        if self.data is not None:
-            print(self.data)
-            print("this is channel 1")
-            print(self.data['Channel 1'])
-            print(self.data.info())
-            print(self.data.columns)
-            print(sample_data)
-            print(self.data.head())
-            print(self.data.shape)
-
-    def clean_data(self):
-        # Implement self cleaning tool
-        self.data = self.data.dropna()
-
-        if 'MetadataColumn' in self.data.columns:
-            self.data = self.data.drop(columns=['MetadataColumn'])
+    def show_statistics(self):
+        # Print summary statistics
+        low, mid, high = self.calculate_rt60_for_frequency_ranges()
+        return f'Summary Statistics:\nChannels: {self.sound.channels}\nBit Depth: {self.sound.sample_width * 8}\nLength (ms): {len(self.sound)}\ndominant_frequency is {round(self.calculate_resonance_frequency(self.data))} Hz\nRT60 for Low Frequencies: {low}\nRT60 for Mid Frequencies: {mid}\nRT60 for High Frequencies: {high}'
 
     def analyze_data(self):
-        # Generate summary statistics
-        summary_stats = self.data.describe()
-
-        # Print summary statistics
-        print("Summary Statistics:")
-        print(summary_stats)
-
         # Create self visualizations
+        time = np.linspace(0., 1 / self.sample_rate)
         self.plot_histogram()
         self.plot_scatter()
         self.plot_sine_wave()
+        self.visualize_waveform()
 
-        # Identify patterns or trends in RT60 values over three frequency ranges
-        self.identify_rt60_trends()
-
-        # Adjust layout
-        plt.tight_layout()
 
         # Display plots
         plt.show()
 
+    def separate_frequency(self, freq_range) :
+        frequencies = np.fft.fftfreq(len(self.data), 1 / self.sample_rate)
+        freq_mask = (frequencies >= freq_range[0]) & (frequencies <= freq_range[-1])
+        filtered_data = self.data * freq_mask
+        return filtered_data
+
     def plot_histogram(self):
-        plt.subplot(2, 2, 1)  # 2x2 grid, position 1
-        self.data['Channel 1'].plot(kind='hist', title='Histogram of Channel 1')
+        plt.subplot(2, 3, 1)  # 2x2 grid, position 1
+        plt.hist(self.data)
+        plt.xlabel('Bins')
+        plt.ylabel('Amplitude')
+        plt.title('Histogram')
 
     def plot_scatter(self):
-        plt.subplot(2, 2, 2)  # 2x2 grid, position 2
-        plt.scatter(self.data.index, self.data['Channel 1'])
-        plt.title('Scatter Plot of Channel 1')
+        plt.subplot(2, 3, 2)  # 2x2 grid, position 2
+        x = np.arange(len(self.data))
+        plt.scatter(x, self.data)
+        plt.title('Scatter')
         plt.xlabel('Index')
-        plt.ylabel('Channel 1')
+        plt.ylabel('Amplitude')
 
     def plot_sine_wave(self):
-        plt.subplot(2, 2, 3)  # 2x2 grid, position 3
+        plt.subplot(2, 3, 3)  # 2x2 grid, position 3
         x_sine = np.linspace(0, 2 * np.pi, 1000)
         y_sine = np.sin(x_sine)
         plt.plot(x_sine, y_sine, label='Sine Wave')
-        plt.title('Plot of a Sine Wave')
-        plt.xlabel('X-axis')
+        plt.title('Sine Wave')
+        plt.xlabel('X-Axis')
         plt.ylabel('Y-axis')
         plt.legend()
 
-    def identify_rt60_trends(self):
-        pass
-
     def visualize_waveform(self):
-        plt.plot(self.data.index, self.data['Channel 1'])
+        plt.subplot(2, 3, 4) # 2x2 grid, position 4
+        x = np.arange(len(self.data))
+        plt.plot(x, self.data)
         plt.title('Waveform')
         plt.xlabel('Time')
         plt.ylabel('Amplitude')
-        plt.show()
 
+    def calculate_resonance_frequency(self, data):
+        frequencies, power = welch(data, self.sample_rate, nperseg=4096)
+        dominant_frequency = frequencies[np.argmax(power)]
+        return dominant_frequency
+    
+    def calculate_rt60(self, data) :
+        psd = self.calculate_resonance_frequency(self.data)
 
-        # all the commented below was me trying to find the
-        # RT60 but no luck
+        # Integrate the Power Spectral Density to find the RT60 value
+        cumulative_energy = np.cumsum(psd)
+        total_energy = np.sum(psd)
 
-"""
-    def calculate_rt60(self):
+        # Find the time index where cumulative energy reaches 60% of total energy
+        rt60_index = np.argmax(cumulative_energy >= 0.6 * total_energy)
 
-        data = self.data['Channel 1'].to_numpy()
-        time = self.data.index.to_numpy()
-
-        # Step 1: Find Maximum value of dB's in array
-        max_db = np.max(data)
-
-        # Step 2: Slice self and time arrays to location of maximum value
-        max_index = np.argmax(data)
-        data_slice = data[max_index:]
-        time_slice = time[max_index:]
-
-        # Step 3: Find value which is Max - 5dB
-        threshold_5db = max_db - 5
-        index_5db = np.argmax(data_slice <= threshold_5db)
-        value_5db = data_slice[index_5db]
-        time_5db = time_slice[index_5db]
-
-        # Step 4: Find a value which is equal to max - 25dB
-        threshold_25db = max_db - 25
-        index_25db = np.argmax(data_slice <= threshold_25db)
-        value_25db = data_slice[index_25db]
-        time_25db = time_slice[index_25db]
-
-        # Step 5: Calculate RT20 as time it takes amplitude to drop from max (less 5dB) to max (less 25dB)
-        rt20 = time_25db - time_5db
-
-        # Step 6: Multiply times by 3 to give RT60 reverb time
-        rt60 = rt20 * 3
+        # Calculate RT60 in seconds
+        rt60 = rt60_index * (1 / self.sample_rate)
 
         return rt60
+    
+    def find_nearest_value(self, array, value) :
+        array = np.asarray(array)
+        idx = (np.abs(array - value)).argmin()
+        return array[idx]
+    
+    def calculate_rt60_for_range(self, freq_range) :
+        filtered_data = self.separate_frequency(freq_range)
+        rt60 = self.calculate_rt60(filtered_data)
+        return rt60
 
-    def identify_rt60_trends(self):
-        # Assume RT60 values are in a column named 'RT60'
-        rt60_values = self.self['RT60']
+    def calculate_rt60_for_frequency_ranges(self) :
+        if self.data is not None :
+            low_freq_range = (20, 200)
+            mid_freq_range = (200, 2000)
+            high_freq_range = (2000, 20000)
 
-        # Boxplot of RT60 values
-        plt.subplot(2, 2, 4)  # 2x2 grid, position 4
-        rt60_values.plot(kind='box', title='Boxplot of RT60 Values')
+            rt60_low = self.calculate_rt60_for_range(low_freq_range)
+            rt60_mid = self.calculate_rt60_for_range(mid_freq_range)
+            rt60_high = self.calculate_rt60_for_range(high_freq_range)
 
-        # Bar chart of RT60 values for each frequency range
-        plt.subplot(2, 2, 4)  # 2x2 grid, position 4 (or choose a new position)
-        self.plot_rt60_bar_chart()
+        return rt60_low, rt60_mid, rt60_high
+
+    def calculate_rt60_difference(self) :
+        if self.data is not None :
+            target_rt60 = 0.5
+            
 
     def plot_rt60_bar_chart(self):
         # Assuming self has columns 'LowFreq_RT60', 'MidFreq_RT60', 'HighFreq_RT60'
         rt60_freq_ranges = ['LowFreq_RT60', 'MidFreq_RT60', 'HighFreq_RT60']
         rt60_values = self.self[rt60_freq_ranges]
         rt60_values.plot(kind='bar', stacked=True, title='RT60 Values Over Three Frequency Ranges')
-
-    def analyze_data(self):
-        # Implement self analysis methods
-        summary_stats = self.self.describe()
-
-        # Print summary statistics
-        print("Summary Statistics:")
-        print(summary_stats)
-
-        # Create self visualizations (you can customize based on your requirements)
-        # Example: Histogram
-        #self.self['Channel 1'].plot(kind='hist', title='Histogram of Channel 1')
-
-        # Example: Scatter Plot
-        # self.self.plot.scatter(x='Channel 1', y='SomeOtherColumn', title='Scatter Plot')
-
-
-
-        # Identify patterns or trends in the self
-        # (This part depends on your specific analysis requirements)"""
 
 
 
