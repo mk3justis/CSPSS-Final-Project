@@ -4,6 +4,7 @@ from pydub import AudioSegment
 import numpy as np
 import matplotlib.pyplot as plt
 
+global spectrum, freeqs, t, im
 
 class Model:
     def __init__(self) :
@@ -39,8 +40,6 @@ class Model:
             raw_data = mono_sound.get_array_of_samples()
             self.data = np.array(raw_data)
 
-        self.db_data = 10 * np.log10(self.data)
-
     def show_statistics(self):
         # Print summary statistics
         low, mid, high = self.calculate_rt60_for_frequency_ranges()
@@ -48,14 +47,12 @@ class Model:
 
     def analyze_data(self):
         # Create self visualizations
+        time = np.linspace(0., 1 / self.sample_rate)
         self.plot_histogram()
         self.plot_scatter()
         self.plot_sine_wave()
-        # self.visualize_waveform()
-        self.decibels()
+        self.visualize_waveform()
 
-        # Identify patterns or trends in RT60 values over three frequency ranges
-        # self.identify_rt60_trends()
 
         # Display plots
         plt.show()
@@ -67,14 +64,14 @@ class Model:
         return filtered_data
 
     def plot_histogram(self):
-        plt.subplot(2, 2, 1)  # 2x2 grid, position 1
+        plt.subplot(2, 3, 1)  # 2x2 grid, position 1
         plt.hist(self.data)
         plt.xlabel('Bins')
         plt.ylabel('Amplitude')
         plt.title('Histogram')
 
     def plot_scatter(self):
-        plt.subplot(2, 2, 2)  # 2x2 grid, position 2
+        plt.subplot(2, 3, 2)  # 2x2 grid, position 2
         x = np.arange(len(self.data))
         plt.scatter(x, self.data)
         plt.title('Scatter')
@@ -82,7 +79,7 @@ class Model:
         plt.ylabel('Amplitude')
 
     def plot_sine_wave(self):
-        plt.subplot(2, 2, 3)  # 2x2 grid, position 3
+        plt.subplot(2, 3, 3)  # 2x2 grid, position 3
         x_sine = np.linspace(0, 2 * np.pi, 1000)
         y_sine = np.sin(x_sine)
         plt.plot(x_sine, y_sine, label='Sine Wave')
@@ -92,19 +89,12 @@ class Model:
         plt.legend()
 
     def visualize_waveform(self):
-        plt.subplot(2, 2, 4) # 2x2 grid, position 4
+        plt.subplot(2, 3, 4) # 2x2 grid, position 4
         x = np.arange(len(self.data))
         plt.plot(x, self.data)
         plt.title('Waveform')
         plt.xlabel('Time')
         plt.ylabel('Amplitude')
-    
-    # this is for testing
-    def decibels(self):
-        plt.subplot(2,2,4)
-        plt.plot(self.db_data)
-        plt.xlabel('Time (s)')
-        plt.ylabel('Power (db)')
 
     def calculate_resonance_frequency(self, data):
         frequencies, power = welch(data, self.sample_rate, nperseg=4096)
@@ -112,7 +102,24 @@ class Model:
         return dominant_frequency
     
     def calculate_rt60(self, data) :
-        pass
+        psd = self.calculate_resonance_frequency(self.data)
+
+        # Integrate the Power Spectral Density to find the RT60 value
+        cumulative_energy = np.cumsum(psd)
+        total_energy = np.sum(psd)
+
+        # Find the time index where cumulative energy reaches 60% of total energy
+        rt60_index = np.argmax(cumulative_energy >= 0.6 * total_energy)
+
+        # Calculate RT60 in seconds
+        rt60 = rt60_index * (1 / self.sample_rate)
+
+        return rt60
+    
+    def find_nearest_value(self, array, value) :
+        array = np.asarray(array)
+        idx = (np.abs(array - value)).argmin()
+        return array[idx]
     
     def calculate_rt60_for_range(self, freq_range) :
         filtered_data = self.separate_frequency(freq_range)
@@ -135,17 +142,6 @@ class Model:
         if self.data is not None :
             target_rt60 = 0.5
             
-
-    # def identify_rt60_trends(self, rt60_values):
-    #     # Maybe store rt60 values into some iterable and pass them through here
-
-    #     # Boxplot of RT60 values
-    #     plt.subplot(2, 2, 4)  # 2x2 grid, position 4
-    #     rt60_values.plot(kind='box', title='Boxplot of RT60 Values')
-
-    #     # Bar chart of RT60 values for each frequency range
-    #     plt.subplot(2, 2, 4)  # 2x2 grid, position 4 (or choose a new position)
-    #     self.plot_rt60_bar_chart()
 
     def plot_rt60_bar_chart(self):
         # Assuming self has columns 'LowFreq_RT60', 'MidFreq_RT60', 'HighFreq_RT60'
