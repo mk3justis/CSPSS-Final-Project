@@ -39,8 +39,7 @@ class Model:
             raw_data = mono_sound.get_array_of_samples()
             self.data = np.array(raw_data)
 
-        self.db_data = self.data.astype(float) / (1 << 15)
-        self.db_data = 20 * np.log10(np.abs(self.db_data))
+        self.db_data = 10 * np.log10(self.data)
 
     def show_statistics(self):
         # Print summary statistics
@@ -100,9 +99,12 @@ class Model:
         plt.xlabel('Time')
         plt.ylabel('Amplitude')
     
+    # this is for testing
     def decibels(self):
         plt.subplot(2,2,4)
         plt.plot(self.db_data)
+        plt.xlabel('Time (s)')
+        plt.ylabel('Power (db)')
 
     def calculate_resonance_frequency(self, data):
         frequencies, power = welch(data, self.sample_rate, nperseg=4096)
@@ -113,9 +115,9 @@ class Model:
         pass
     
     def calculate_rt60_for_range(self, freq_range) :
-            filtered_data = self.separate_frequency(freq_range)
-            rt60 = self.calculate_rt60(filtered_data)
-            return rt60
+        filtered_data = self.separate_frequency(freq_range)
+        rt60 = self.calculate_rt60(filtered_data)
+        return rt60
 
     def calculate_rt60_for_frequency_ranges(self) :
         if self.data is not None :
