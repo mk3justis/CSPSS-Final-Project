@@ -9,6 +9,7 @@ class Model:
     def __init__(self) :
         self.sound = None
         self.data = None
+        self.db_data = None
         self.sample_rate = None
 
     def load_data(self, file_path) :
@@ -37,44 +38,47 @@ class Model:
             mono_sound = stereo_channels[0]
             raw_data = mono_sound.get_array_of_samples()
             self.data = np.array(raw_data)
-        
-    def clean_data(self, sound):
-        # Implement self cleaning tool
-        sound = sound._spawn(b'')
 
+        self.db_data = self.data.astype(float) / (1 << 15)
+        self.db_data = 20 * np.log10(np.abs(self.db_data))
 
     def show_statistics(self):
         # Print summary statistics
-        return f'Summary Statistics:\nChannels: {self.sound.channels}\nBit Depth: {self.sound.sample_width * 8}\nLength (ms): {len(self.sound)}\ndominant_frequency is {round(self.calculate_rt60())} Hz'
+        low, mid, high = self.calculate_rt60_for_frequency_ranges()
+        return f'Summary Statistics:\nChannels: {self.sound.channels}\nBit Depth: {self.sound.sample_width * 8}\nLength (ms): {len(self.sound)}\ndominant_frequency is {round(self.calculate_resonance_frequency(self.data))} Hz\nRT60 for Low Frequencies: {low}\nRT60 for Mid Frequencies: {mid}\nRT60 for High Frequencies: {high}'
 
     def analyze_data(self):
         # Create self visualizations
         self.plot_histogram()
         self.plot_scatter()
-        # self.plot_sine_wave()
-        self.visualize_waveform()
+        self.plot_sine_wave()
+        # self.visualize_waveform()
+        self.decibels()
 
         # Identify patterns or trends in RT60 values over three frequency ranges
-        self.identify_rt60_trends()
-
-        # Adjust layout
-        plt.tight_layout()
+        # self.identify_rt60_trends()
 
         # Display plots
         plt.show()
+
+    def separate_frequency(self, freq_range) :
+        frequencies = np.fft.fftfreq(len(self.data), 1 / self.sample_rate)
+        freq_mask = (frequencies >= freq_range[0]) & (frequencies <= freq_range[-1])
+        filtered_data = self.data * freq_mask
+        return filtered_data
 
     def plot_histogram(self):
         plt.subplot(2, 2, 1)  # 2x2 grid, position 1
         plt.hist(self.data)
         plt.xlabel('Bins')
         plt.ylabel('Amplitude')
-        plt.title('Histogram of File Data')
+        plt.title('Histogram')
 
     def plot_scatter(self):
         plt.subplot(2, 2, 2)  # 2x2 grid, position 2
         x = np.arange(len(self.data))
         plt.scatter(x, self.data)
-        plt.title('Scatter Plot of File Data')
+        plt.title('Scatter')
         plt.xlabel('Index')
         plt.ylabel('Amplitude')
 
@@ -83,62 +87,69 @@ class Model:
         x_sine = np.linspace(0, 2 * np.pi, 1000)
         y_sine = np.sin(x_sine)
         plt.plot(x_sine, y_sine, label='Sine Wave')
-        plt.title('Plot of a Sine Wave')
+        plt.title('Sine Wave')
         plt.xlabel('X-Axis')
         plt.ylabel('Y-axis')
         plt.legend()
 
     def visualize_waveform(self):
+        plt.subplot(2, 2, 4) # 2x2 grid, position 4
         x = np.arange(len(self.data))
         plt.plot(x, self.data)
         plt.title('Waveform')
         plt.xlabel('Time')
         plt.ylabel('Amplitude')
-        plt.show()
+    
+    def decibels(self):
+        plt.subplot(2,2,4)
+        plt.plot(self.db_data)
 
-    def calculate_rt60(self):
-        frequencies, power = welch(self.data, self.sample_rate, nperseg=4096)
+    def calculate_resonance_frequency(self, data):
+        frequencies, power = welch(data, self.sample_rate, nperseg=4096)
         dominant_frequency = frequencies[np.argmax(power)]
         return dominant_frequency
+    
+    def calculate_rt60(self, data) :
+        pass
+    
+    def calculate_rt60_for_range(self, freq_range) :
+            filtered_data = self.separate_frequency(freq_range)
+            rt60 = self.calculate_rt60(filtered_data)
+            return rt60
 
+    def calculate_rt60_for_frequency_ranges(self) :
+        if self.data is not None :
+            low_freq_range = (20, 200)
+            mid_freq_range = (200, 2000)
+            high_freq_range = (2000, 20000)
 
-    def identify_rt60_trends(self, rt60_values):
-        # Maybe store rt60 values into some iterable and pass them through here
+            rt60_low = self.calculate_rt60_for_range(low_freq_range)
+            rt60_mid = self.calculate_rt60_for_range(mid_freq_range)
+            rt60_high = self.calculate_rt60_for_range(high_freq_range)
 
-        # Boxplot of RT60 values
-        plt.subplot(2, 2, 4)  # 2x2 grid, position 4
-        rt60_values.plot(kind='box', title='Boxplot of RT60 Values')
+        return rt60_low, rt60_mid, rt60_high
 
-        # Bar chart of RT60 values for each frequency range
-        plt.subplot(2, 2, 4)  # 2x2 grid, position 4 (or choose a new position)
-        self.plot_rt60_bar_chart()
+    def calculate_rt60_difference(self) :
+        if self.data is not None :
+            target_rt60 = 0.5
+            
+
+    # def identify_rt60_trends(self, rt60_values):
+    #     # Maybe store rt60 values into some iterable and pass them through here
+
+    #     # Boxplot of RT60 values
+    #     plt.subplot(2, 2, 4)  # 2x2 grid, position 4
+    #     rt60_values.plot(kind='box', title='Boxplot of RT60 Values')
+
+    #     # Bar chart of RT60 values for each frequency range
+    #     plt.subplot(2, 2, 4)  # 2x2 grid, position 4 (or choose a new position)
+    #     self.plot_rt60_bar_chart()
 
     def plot_rt60_bar_chart(self):
         # Assuming self has columns 'LowFreq_RT60', 'MidFreq_RT60', 'HighFreq_RT60'
         rt60_freq_ranges = ['LowFreq_RT60', 'MidFreq_RT60', 'HighFreq_RT60']
         rt60_values = self.self[rt60_freq_ranges]
         rt60_values.plot(kind='bar', stacked=True, title='RT60 Values Over Three Frequency Ranges')
-
-    # def analyze_data(self):
-    #     # Implement self analysis methods
-    #     summary_stats = self.self.describe()
-
-    #     # Print summary statistics
-    #     print("Summary Statistics:")
-    #     print(summary_stats)
-
-
-        # Create self visualizations (you can customize based on your requirements)
-        # Example: Histogram
-        #self.self['Channel 1'].plot(kind='hist', title='Histogram of Channel 1')
-
-        # Example: Scatter Plot
-        # self.self.plot.scatter(x='Channel 1', y='SomeOtherColumn', title='Scatter Plot')
-
-
-
-        # Identify patterns or trends in the self
-        # (This part depends on your specific analysis requirements)
 
 
 
