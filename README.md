@@ -11,4 +11,4 @@ main.py --> runs or executes the application
 
 Project Descrption: The goal of the project is to make a Scientific Python Interactive Data Acoustic Modeling platform which will analyze imported audio and clean the audio to aid in scientific computations.
 
-Instructions: First import an audio file by clicking the load file button, which will covert the file into a .wave if it isn't in that format. Then by clicking Show plots, it will show the graphs of the data a long with the data in the GUI.
+Instructions: First import an audio file by clicking the load file button, which will covert mp3 file into a .wav if it isn't in that format. Then by clicking Show plots, it will show the graphs of the data a long with the data in the GUI.
